@@ -454,21 +454,40 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
 
             # Show previous field with question prompt and previous answer
             if prev_answer:
-                # Send ONE message with prompt, previous answer, and both buttons
-                prompt_text = prev_field['prompt']
-                message_text = f"{prompt_text}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
+                # Check if this is the form field (index 2) - it has special button layout
+                if prev_field_idx == 2:
+                    # Form field with previous answer - show 4 form buttons + back button
+                    prompt_text = prev_field['prompt']
+                    message_text = f"{prompt_text}\n\n→ {prev_answer}\n\nВыберите другой вариант или нажмите 'Назад'."
 
-                # Create keyboard with both back and OK buttons
-                keyboard = []
-                if prev_field_idx > 0:  # Add back button if not on first field
-                    keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
-                keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
-                reply_markup = InlineKeyboardMarkup(keyboard)
+                    keyboard = [
+                        [InlineKeyboardButton("Да-принимающее", callback_data='form_yes_accepting')],
+                        [InlineKeyboardButton("Нет-принимающее", callback_data='form_no_accepting')],
+                        [InlineKeyboardButton("Да-отрицающее", callback_data='form_yes_rejecting')],
+                        [InlineKeyboardButton("Нет-отрицающее", callback_data='form_no_rejecting')]
+                    ]
+                    if prev_field_idx > 0:
+                        keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
+                    reply_markup = InlineKeyboardMarkup(keyboard)
 
-                confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
+                    confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
+                    context.user_data['field_prompt_message_id'] = confirmation_msg.message_id
+                else:
+                    # Regular field with previous answer - show back and OK buttons
+                    prompt_text = prev_field['prompt']
+                    message_text = f"{prompt_text}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
 
-                # Store confirmation message ID for potential removal if user adds more text
-                context.user_data['confirmation_message_id'] = confirmation_msg.message_id
+                    # Create keyboard with both back and OK buttons
+                    keyboard = []
+                    if prev_field_idx > 0:  # Add back button if not on first field
+                        keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
+                    keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+
+                    confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
+
+                    # Store confirmation message ID for potential removal if user adds more text
+                    context.user_data['confirmation_message_id'] = confirmation_msg.message_id
             else:
                 # No previous answer, show prompt (with form buttons if form field)
                 await send_field_prompt(query.message, prev_field, prev_field_idx, context)
