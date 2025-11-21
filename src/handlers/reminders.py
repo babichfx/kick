@@ -176,9 +176,8 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
     """
     Handle callback queries from reminder message buttons.
 
-    Handles three callback types:
+    Handles two callback types:
     - reminder_yes_guided: Start guided step-by-step practice
-    - reminder_yes_free: Start free-form practice
     - reminder_no: Dismiss and record refusal
     """
     query = update.callback_query
@@ -195,6 +194,7 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
             context.user_data['mode'] = 'guided_practice'
             context.user_data['current_field'] = 0  # Start with first field
             context.user_data['practice_data'] = {}  # Initialize practice data storage
+            context.user_data['current_answer'] = None  # Track current answer being refined
 
             # Delete reminder message
             await query.message.delete()
@@ -202,24 +202,10 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
             # Send prompt for first field (content)
             from config import PRACTICE_FIELDS
             first_field = PRACTICE_FIELDS[0]
+
             await query.message.reply_text(first_field['prompt'])
 
             logger.info(f"User {user_id} started guided practice")
-
-        elif callback_data == 'reminder_yes_free':
-            # Start free-form practice
-            context.user_data['mode'] = 'free_practice'
-            context.user_data['practice_data'] = {}
-
-            # Delete reminder message
-            await query.message.delete()
-
-            # Show all fields at once
-            from config import PRACTICE_FIELDS
-            fields_text = "\n\n".join([f['prompt'] for f in PRACTICE_FIELDS])
-            await query.message.reply_text(f"{fields_text}\n\n{BotPhrases.PRACTICE_START}")
-
-            logger.info(f"User {user_id} started free practice")
 
         elif callback_data == 'reminder_no':
             # User declined - record refusal

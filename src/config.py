@@ -103,10 +103,8 @@ class BotPhrases:
 
     # Buttons
     BTN_YES_GUIDED = "Да, пошагово"
-    BTN_YES_FREE = "Да"
     BTN_NO = "Нет"
     BTN_OK = "Всё ок"
-    BTN_REFINE = "Уточнить/добавить"
     BTN_QUESTIONS = "Задать наводящие вопросы"
     BTN_COMPLETE = "Завершить"
     BTN_NEXT = "Далее"

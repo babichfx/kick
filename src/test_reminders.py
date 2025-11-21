@@ -197,22 +197,10 @@ async def test_reminder_callbacks():
     print(f"   Mode set: {context.user_data.get('mode')}")
     print(f"   Current field: {context.user_data.get('current_field')}")
     print(f"   Practice data initialized: {'practice_data' in context.user_data}")
+    print(f"   Current answer tracking: {'current_answer' in context.user_data}")
 
-    # Test 2: Yes, free
-    print("\n2. Testing 'Да' button (free practice)")
-    context = MockContext(mock_bot)
-    context.user_data['authenticated'] = True
-
-    update = MockUpdate("", test_user_id)
-    update.callback_query = MockCallbackQuery('reminder_yes_free', test_user_id)
-
-    await handle_reminder_response(update, context)
-
-    print(f"   Mode set: {context.user_data.get('mode')}")
-    print(f"   Practice data initialized: {'practice_data' in context.user_data}")
-
-    # Test 3: No
-    print("\n3. Testing 'Нет' button")
+    # Test 2: No
+    print("\n2. Testing 'Нет' button")
     context = MockContext(mock_bot)
     context.user_data['authenticated'] = True
 

@@ -175,9 +175,8 @@ async def send_reminder(telegram_user_id: int, bot):
     Send reminder message to user with inline keyboard buttons.
 
     This function fires at scheduled times. Sends the reminder prompt
-    with three options:
+    with two options:
     - "Да, пошагово" - Step-by-step guided practice
-    - "Да" - Free-form practice
     - "Нет" - Dismiss (records refusal)
 
     Args:
@@ -187,10 +186,9 @@ async def send_reminder(telegram_user_id: int, bot):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     try:
-        # Create inline keyboard with three buttons
+        # Create inline keyboard with two buttons
         keyboard = [
             [InlineKeyboardButton(BotPhrases.BTN_YES_GUIDED, callback_data='reminder_yes_guided')],
-            [InlineKeyboardButton(BotPhrases.BTN_YES_FREE, callback_data='reminder_yes_free')],
             [InlineKeyboardButton(BotPhrases.BTN_NO, callback_data='reminder_no')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
