@@ -54,31 +54,49 @@ async def send_field_confirmation(update: Update, context: ContextTypes.DEFAULT_
         current_field_idx = context.user_data.get('current_field', 0)
         current_field = PRACTICE_FIELDS[current_field_idx]
 
-        # Show confirmation button with back button if not on first field
-        current_field_idx = context.user_data.get('current_field', 0)
-        keyboard = []
+        # Remove buttons from field prompt message if it exists (keep the text visible)
+        field_prompt_message_id = context.user_data.get('field_prompt_message_id')
+        if field_prompt_message_id:
+            try:
+                chat_id = update.effective_chat.id
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=field_prompt_message_id,
+                    reply_markup=None
+                )
+                context.user_data['field_prompt_message_id'] = None
+            except Exception as e:
+                logger.warning(f"Could not remove buttons from field prompt message: {e}")
 
-        if current_field_idx > 0:
-            # Add back and OK buttons side by side
-            keyboard.append([
-                InlineKeyboardButton("← Назад", callback_data='field_back'),
-                InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')
-            ])
-        else:
-            # Just OK button on first field
-            keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
+        # Remove button from previous confirmation message if user is adding more text
+        previous_confirmation_msg_id = context.user_data.get('confirmation_message_id')
+        if previous_confirmation_msg_id:
+            try:
+                chat_id = update.effective_chat.id
+                await context.bot.edit_message_reply_markup(
+                    chat_id=chat_id,
+                    message_id=previous_confirmation_msg_id,
+                    reply_markup=None
+                )
+            except Exception as e:
+                logger.warning(f"Could not remove button from previous confirmation: {e}")
 
+        # Show only OK button (no back button here)
+        keyboard = [[InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         confirmation_text = f"{full_text}\n\nПодтвердите ответ или добавьте что-то если необходимо."
 
         # Send to chat
         chat_id = update.effective_chat.id
-        await context.bot.send_message(
+        confirmation_msg = await context.bot.send_message(
             chat_id=chat_id,
             text=confirmation_text,
             reply_markup=reply_markup
         )
+
+        # Store confirmation message ID for potential removal if user adds more text
+        context.user_data['confirmation_message_id'] = confirmation_msg.message_id
 
         # Clean up
         del field_message_parts[user_id]
@@ -228,7 +246,7 @@ async def handle_practice_voice(update: Update, context: ContextTypes.DEFAULT_TY
         return True
 
 
-async def send_field_prompt(message, field, field_idx: int) -> None:
+async def send_field_prompt(message, field, field_idx: int, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Send field prompt with optional inline buttons for form field.
 
@@ -236,6 +254,7 @@ async def send_field_prompt(message, field, field_idx: int) -> None:
         message: Telegram message object to reply to
         field: Field configuration dict
         field_idx: Index of the current field
+        context: Telegram context for storing message ID
     """
     prompt_text = field['prompt']
 
@@ -247,11 +266,24 @@ async def send_field_prompt(message, field, field_idx: int) -> None:
             [InlineKeyboardButton("Да-отрицающее", callback_data='form_yes_rejecting')],
             [InlineKeyboardButton("Нет-отрицающее", callback_data='form_no_rejecting')]
         ]
+        # Add back button if not on first field
+        if field_idx > 0:
+            keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await message.reply_text(prompt_text, reply_markup=reply_markup)
+        sent_message = await message.reply_text(prompt_text, reply_markup=reply_markup)
+        # Store message ID for later deletion
+        context.user_data['field_prompt_message_id'] = sent_message.message_id
     else:
-        # Regular field - just send text prompt
-        await message.reply_text(prompt_text)
+        # Regular field - send text prompt with back button if not first field
+        if field_idx > 0:
+            keyboard = [[InlineKeyboardButton("← Назад", callback_data='field_back')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            sent_message = await message.reply_text(prompt_text, reply_markup=reply_markup)
+            # Store message ID for later deletion
+            context.user_data['field_prompt_message_id'] = sent_message.message_id
+        else:
+            # First field - no back button
+            await message.reply_text(prompt_text)
 
 
 async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -305,7 +337,7 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             next_field = PRACTICE_FIELDS[next_field_idx]
 
             # Send prompt for next field
-            await send_field_prompt(query.message, next_field, next_field_idx)
+            await send_field_prompt(query.message, next_field, next_field_idx, context)
 
             logger.info(f"User {user_id} selected form '{selected_form}', moved to field '{next_field['name']}'")
             return
@@ -333,6 +365,9 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             # Delete the confirmation message
             await query.message.delete()
 
+            # Clear confirmation message ID since it's deleted
+            context.user_data['confirmation_message_id'] = None
+
             # Move to next field or complete the practice
             next_field_idx = current_field_idx + 1
 
@@ -342,7 +377,7 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                 next_field = PRACTICE_FIELDS[next_field_idx]
 
                 # Send prompt for next field
-                await send_field_prompt(query.message, next_field, next_field_idx)
+                await send_field_prompt(query.message, next_field, next_field_idx, context)
 
                 logger.info(f"User {user_id} moved to field '{next_field['name']}'")
 
@@ -369,6 +404,22 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             # Delete the confirmation message
             await query.message.delete()
 
+            # Clear confirmation message ID since it's deleted
+            context.user_data['confirmation_message_id'] = None
+
+            # Remove buttons from field prompt message if it exists (keep the text visible)
+            field_prompt_message_id = context.user_data.get('field_prompt_message_id')
+            if field_prompt_message_id:
+                try:
+                    await context.bot.edit_message_reply_markup(
+                        chat_id=query.message.chat_id,
+                        message_id=field_prompt_message_id,
+                        reply_markup=None
+                    )
+                    context.user_data['field_prompt_message_id'] = None
+                except Exception as e:
+                    logger.warning(f"Could not remove buttons from field prompt message: {e}")
+
             # Move back one field
             prev_field_idx = current_field_idx - 1
             context.user_data['current_field'] = prev_field_idx
@@ -382,23 +433,20 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
 
             # Show previous field with question prompt and previous answer
             if prev_answer:
-                # Show question + previous answer + confirmation button
-                keyboard = []
-                if prev_field_idx > 0:
-                    keyboard.append([
-                        InlineKeyboardButton("← Назад", callback_data='field_back'),
-                        InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')
-                    ])
-                else:
-                    keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
+                # First, send the question with back button
+                await send_field_prompt(query.message, prev_field, prev_field_idx, context)
 
+                # Then show previous answer + OK button only
+                keyboard = [[InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                # Include the question prompt so user remembers what they were answering
-                message_text = f"{prev_field['prompt']}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
-                await query.message.reply_text(message_text, reply_markup=reply_markup)
+                message_text = f"→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
+                confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
+
+                # Store confirmation message ID for potential removal if user adds more text
+                context.user_data['confirmation_message_id'] = confirmation_msg.message_id
             else:
                 # No previous answer, show prompt (with form buttons if form field)
-                await send_field_prompt(query.message, prev_field, prev_field_idx)
+                await send_field_prompt(query.message, prev_field, prev_field_idx, context)
                 context.user_data['current_answer'] = None
 
             logger.info(f"User {user_id} went back to field '{prev_field['name']}'")
@@ -433,6 +481,8 @@ async def complete_practice(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         context.user_data['current_field'] = None
         context.user_data['practice_data'] = {}
         context.user_data['current_answer'] = None
+        context.user_data['confirmation_message_id'] = None
+        context.user_data['field_prompt_message_id'] = None
 
         # Clean up any pending timers
         if user_id in field_timers:

@@ -66,6 +66,7 @@ def main() -> None:
         setup_schedule_command,
         view_schedule_command,
         disable_schedule_command,
+        timezone_command,
         handle_timezone_selection,
         handle_custom_timezone_input
     )
@@ -75,6 +76,7 @@ def main() -> None:
     application.add_handler(CommandHandler('schedule', setup_schedule_command))
     application.add_handler(CommandHandler('view_schedule', view_schedule_command))
     application.add_handler(CommandHandler('disable_schedule', disable_schedule_command))
+    application.add_handler(CommandHandler('timezone', timezone_command))
 
     # Text message handler (for password authentication and future features)
     async def handle_text(update: Update, context) -> None:

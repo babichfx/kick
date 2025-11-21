@@ -31,6 +31,80 @@ from handlers.auth import require_auth
 logger = logging.getLogger(__name__)
 
 
+def _get_timezone_keyboard():
+    """
+    Return inline keyboard with timezone options.
+    Reusable function for both /schedule and /timezone commands.
+    """
+    return [
+        [InlineKeyboardButton("UTC+0 — Лондон, Лиссабон, Касабланка",
+                              callback_data="tz_Europe/London")],
+        [InlineKeyboardButton("UTC+1 — Берлин, Париж, Рим, Мадрид",
+                              callback_data="tz_Europe/Berlin")],
+        [InlineKeyboardButton("UTC+2 — Киев, Каир, Калининград",
+                              callback_data="tz_Europe/Kyiv")],
+        [InlineKeyboardButton("UTC+3 — Москва, Стамбул, Найроби",
+                              callback_data="tz_Europe/Moscow")],
+        [InlineKeyboardButton("UTC+4 — Дубай, Баку, Самара, Ереван",
+                              callback_data="tz_Asia/Dubai")],
+        [InlineKeyboardButton("UTC+5 — Екатеринбург, Ташкент, Карачи",
+                              callback_data="tz_Asia/Tashkent")],
+        [InlineKeyboardButton("UTC+5:30 — Нью-Дели, Мумбаи, Калькутта",
+                              callback_data="tz_Asia/Kolkata")],
+        [InlineKeyboardButton("UTC+6 — Алматы, Дакка, Бишкек, Омск",
+                              callback_data="tz_Asia/Almaty")],
+        [InlineKeyboardButton("UTC+6:30 — Янгон, Нейпьидо, Мандалай",
+                              callback_data="tz_Asia/Yangon")],
+        [InlineKeyboardButton("UTC+7 — Новосибирск, Бангкок, Джакарта",
+                              callback_data="tz_Asia/Bangkok")],
+        [InlineKeyboardButton("UTC+8 — Иркутск, Гонконг, Сингапур",
+                              callback_data="tz_Asia/Shanghai")],
+        [InlineKeyboardButton("UTC+9 — Якутск, Токио, Сеул",
+                              callback_data="tz_Asia/Tokyo")],
+        [InlineKeyboardButton("UTC+9:30 — Аделаида, Дарвин",
+                              callback_data="tz_Australia/Adelaide")],
+        [InlineKeyboardButton("UTC+10 — Владивосток, Сидней, Мельбурн",
+                              callback_data="tz_Australia/Sydney")],
+        [InlineKeyboardButton("UTC+10:30 — остров Лорд-Хау",
+                              callback_data="tz_Australia/Lord_Howe")],
+        [InlineKeyboardButton("UTC+11 — Магадан, Сахалин, Нумеа",
+                              callback_data="tz_Asia/Magadan")],
+        [InlineKeyboardButton("UTC+12 — Петропавловск-Камчатский, Анадырь",
+                              callback_data="tz_Pacific/Auckland")],
+        [InlineKeyboardButton("UTC+13 — Токелау, Нукуалофа, Апиа",
+                              callback_data="tz_Pacific/Tongatapu")],
+        [InlineKeyboardButton("UTC+14 — Киритимати (Остров Рождества)",
+                              callback_data="tz_Pacific/Kiritimati")],
+        [InlineKeyboardButton("Другой часовой пояс",
+                              callback_data="tz_custom")],
+    ]
+
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle /timezone command - change user's timezone.
+    """
+    # Check authentication
+    if not await require_auth(update, context):
+        return
+
+    user_id = update.effective_user.id
+    current_timezone = db.get_user_timezone(user_id)
+
+    # Show timezone selection keyboard
+    keyboard = _get_timezone_keyboard()
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    context.user_data['setting_timezone'] = True
+    context.user_data['timezone_only'] = True  # Flag to indicate standalone timezone change
+
+    await update.message.reply_text(
+        f"Текущий часовой пояс: {current_timezone}\n\nВыберите новый часовой пояс:",
+        reply_markup=reply_markup
+    )
+    logger.info(f"User {user_id} requested timezone change")
+
+
 async def setup_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle /schedule command - start schedule configuration flow.
@@ -48,52 +122,11 @@ async def setup_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
     # If no timezone set (or default), ask user to confirm or set timezone
     if not user_timezone or user_timezone == 'Europe/Moscow':
         # Ask for timezone with common options
-        keyboard = [
-            [InlineKeyboardButton("UTC+0 — Лондон, Лиссабон, Касабланка",
-                                  callback_data="tz_Europe/London")],
-            [InlineKeyboardButton("UTC+1 — Берлин, Париж, Рим, Мадрид",
-                                  callback_data="tz_Europe/Berlin")],
-            [InlineKeyboardButton("UTC+2 — Киев, Каир, Калининград",
-                                  callback_data="tz_Europe/Kyiv")],
-            [InlineKeyboardButton("UTC+3 — Москва, Стамбул, Найроби",
-                                  callback_data="tz_Europe/Moscow")],
-            [InlineKeyboardButton("UTC+4 — Дубай, Баку, Самара, Ереван",
-                                  callback_data="tz_Asia/Dubai")],
-            [InlineKeyboardButton("UTC+5 — Екатеринбург, Ташкент, Карачи",
-                                  callback_data="tz_Asia/Tashkent")],
-            [InlineKeyboardButton("UTC+5:30 — Нью-Дели, Мумбаи, Калькутта",
-                                  callback_data="tz_Asia/Kolkata")],
-            [InlineKeyboardButton("UTC+6 — Алматы, Дакка, Бишкек, Омск",
-                                  callback_data="tz_Asia/Almaty")],
-            [InlineKeyboardButton("UTC+6:30 — Янгон, Нейпьидо, Мандалай",
-                                  callback_data="tz_Asia/Yangon")],
-            [InlineKeyboardButton("UTC+7 — Новосибирск, Бангкок, Джакарта",
-                                  callback_data="tz_Asia/Bangkok")],
-            [InlineKeyboardButton("UTC+8 — Иркутск, Гонконг, Сингапур",
-                                  callback_data="tz_Asia/Shanghai")],
-            [InlineKeyboardButton("UTC+9 — Якутск, Токио, Сеул",
-                                  callback_data="tz_Asia/Tokyo")],
-            [InlineKeyboardButton("UTC+9:30 — Аделаида, Дарвин",
-                                  callback_data="tz_Australia/Adelaide")],
-            [InlineKeyboardButton("UTC+10 — Владивосток, Сидней, Мельбурн",
-                                  callback_data="tz_Australia/Sydney")],
-            [InlineKeyboardButton("UTC+10:30 — остров Лорд-Хау",
-                                  callback_data="tz_Australia/Lord_Howe")],
-            [InlineKeyboardButton("UTC+11 — Магадан, Сахалин, Нумеа",
-                                  callback_data="tz_Asia/Magadan")],
-            [InlineKeyboardButton("UTC+12 — Петропавловск-Камчатский, Анадырь",
-                                  callback_data="tz_Pacific/Auckland")],
-            [InlineKeyboardButton("UTC+13 — Токелау, Нукуалофа, Апиа",
-                                  callback_data="tz_Pacific/Tongatapu")],
-            [InlineKeyboardButton("UTC+14 — Киритимати (Остров Рождества)",
-                                  callback_data="tz_Pacific/Kiritimati")],
-            [InlineKeyboardButton("Другой часовой пояс",
-                                  callback_data="tz_custom")],
-        ]
-
+        keyboard = _get_timezone_keyboard()
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         context.user_data['setting_timezone'] = True
+        context.user_data['timezone_only'] = False  # Flag to indicate timezone is part of schedule setup
 
         await update.message.reply_text(
             "В каком часовом поясе вы находитесь?",
@@ -402,7 +435,7 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
             from handlers.practice import send_field_prompt
             first_field = PRACTICE_FIELDS[0]
 
-            await send_field_prompt(query.message, first_field, 0)
+            await send_field_prompt(query.message, first_field, 0, context)
 
             logger.info(f"User {user_id} started guided practice")
 
@@ -456,17 +489,28 @@ async def handle_timezone_selection(update: Update, context: ContextTypes.DEFAUL
             # Delete timezone selection message
             await query.message.delete()
 
-            # Clear timezone setting flag and start schedule input
+            # Check if this is standalone timezone change or part of schedule setup
+            timezone_only = context.user_data.get('timezone_only', False)
+
+            # Clear timezone setting flags
             context.user_data['setting_timezone'] = False
-            context.user_data['awaiting_schedule'] = True
+            context.user_data['timezone_only'] = False
 
-            # Prompt for schedule
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
-            )
-
-            logger.info(f"User {user_id} set timezone to {timezone}")
+            if timezone_only:
+                # Standalone timezone change - just confirm
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Часовой пояс изменён: {timezone}"
+                )
+                logger.info(f"User {user_id} changed timezone to {timezone}")
+            else:
+                # Part of schedule setup - proceed to schedule input
+                context.user_data['awaiting_schedule'] = True
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
+                )
+                logger.info(f"User {user_id} set timezone to {timezone} and started schedule setup")
 
         elif callback_data == 'tz_custom':
             # User wants to enter custom timezone
@@ -488,6 +532,7 @@ async def handle_timezone_selection(update: Update, context: ContextTypes.DEFAUL
             text="Произошла ошибка при установке часового пояса. Попробуйте еще раз."
         )
         context.user_data['setting_timezone'] = False
+        context.user_data['timezone_only'] = False
 
 
 async def handle_custom_timezone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -515,7 +560,7 @@ async def handle_custom_timezone_input(update: Update, context: ContextTypes.DEF
         pytz.timezone(timezone)
     except pytz.exceptions.UnknownTimeZoneError:
         await update.message.reply_text(
-            f"Неверный часовой пояс: {timezone}. Попробуйте еще раз или используйте /schedule для выбора из списка."
+            f"Неверный часовой пояс: {timezone}. Попробуйте еще раз или используйте /timezone для выбора из списка."
         )
         context.user_data['awaiting_custom_timezone'] = False
         return True
@@ -523,14 +568,25 @@ async def handle_custom_timezone_input(update: Update, context: ContextTypes.DEF
     # Save timezone to database
     db.set_user_timezone(user_id, timezone)
 
-    # Clear flag and start schedule input
+    # Check if this is standalone timezone change or part of schedule setup
+    timezone_only = context.user_data.get('timezone_only', False)
+
+    # Clear flags
     context.user_data['awaiting_custom_timezone'] = False
-    context.user_data['awaiting_schedule'] = True
+    context.user_data['timezone_only'] = False
 
-    # Prompt for schedule
-    await update.message.reply_text(
-        f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
-    )
+    if timezone_only:
+        # Standalone timezone change - just confirm
+        await update.message.reply_text(
+            f"Часовой пояс изменён: {timezone}"
+        )
+        logger.info(f"User {user_id} changed custom timezone to {timezone}")
+    else:
+        # Part of schedule setup - proceed to schedule input
+        context.user_data['awaiting_schedule'] = True
+        await update.message.reply_text(
+            f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
+        )
+        logger.info(f"User {user_id} set custom timezone to {timezone} and started schedule setup")
 
-    logger.info(f"User {user_id} set custom timezone to {timezone}")
     return True
