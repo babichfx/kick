@@ -328,8 +328,14 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             context.user_data['practice_data']['form'] = selected_form
             context.user_data['current_answer'] = None
 
-            # Delete the form selection message
-            await query.message.delete()
+            # Remove buttons from the form selection message (keep the text visible)
+            try:
+                await query.message.edit_reply_markup(reply_markup=None)
+            except Exception as e:
+                logger.warning(f"Could not remove buttons from form selection message: {e}")
+
+            # Show the selected option as a visible message
+            await query.message.reply_text(f"→ {selected_form}")
 
             # Move to next field (body)
             next_field_idx = current_field_idx + 1
@@ -382,8 +388,23 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                 logger.info(f"User {user_id} moved to field '{next_field['name']}'")
 
             else:
-                # All fields completed - save to database
-                await complete_practice(update, context, query.message)
+                # All fields completed - show confirmation before saving
+                # Set current_field to beyond the last field so back button works correctly
+                context.user_data['current_field'] = len(PRACTICE_FIELDS)
+
+                keyboard = [
+                    [InlineKeyboardButton("← Назад", callback_data='field_back')],
+                    [InlineKeyboardButton("Сохранить", callback_data='field_save')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.message.reply_text("Все готово к сохранению", reply_markup=reply_markup)
+
+                logger.info(f"User {user_id} completed all fields, awaiting save confirmation")
+
+        elif callback_data == 'field_save':
+            # User confirmed to save - delete confirmation message and save to database
+            await query.message.delete()
+            await complete_practice(update, context, query.message)
 
         elif callback_data == 'field_back':
             # User wants to go back to previous field
@@ -433,13 +454,17 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
 
             # Show previous field with question prompt and previous answer
             if prev_answer:
-                # First, send the question with back button
-                await send_field_prompt(query.message, prev_field, prev_field_idx, context)
+                # Send ONE message with prompt, previous answer, and both buttons
+                prompt_text = prev_field['prompt']
+                message_text = f"{prompt_text}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
 
-                # Then show previous answer + OK button only
-                keyboard = [[InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]]
+                # Create keyboard with both back and OK buttons
+                keyboard = []
+                if prev_field_idx > 0:  # Add back button if not on first field
+                    keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
+                keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                message_text = f"→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
+
                 confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
 
                 # Store confirmation message ID for potential removal if user adds more text
