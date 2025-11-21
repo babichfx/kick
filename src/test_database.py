@@ -37,25 +37,27 @@ def test_database():
     assert retrieved_schedule == schedule, "Schedule retrieval failed"
     print(f"   ✓ Reminder schedule saved and retrieved: {retrieved_schedule['times']}")
 
-    # 4. Test raw diary entry
-    print("\n4. Testing raw diary entry...")
+    # 4. Test structured practice entry (first)
+    print("\n4. Testing structured practice entry (first)...")
     entry_id = db.create_entry(
         telegram_user_id=test_user_id,
-        entry_type='raw_diary',
-        content='Today I felt anxious about the upcoming meeting.'
-    )
-    print(f"   ✓ Diary entry created with ID: {entry_id}")
-
-    # 5. Test structured practice entry
-    print("\n5. Testing structured practice entry...")
-    entry_id = db.create_entry(
-        telegram_user_id=test_user_id,
-        entry_type='structured_practice',
         content='Тревога по поводу встречи',
         attitude='Напряжение в груди',
         form='Нет-отвергающее',
         body='Да, совпадает',
         response='Напряжение немного уменьшилось'
+    )
+    print(f"   ✓ Structured entry created with ID: {entry_id}")
+
+    # 5. Test structured practice entry (second)
+    print("\n5. Testing structured practice entry (second)...")
+    entry_id = db.create_entry(
+        telegram_user_id=test_user_id,
+        content='Радость от завершения проекта',
+        attitude='Расслабление в теле',
+        form='Да-принимающее',
+        body='Да, совпадает',
+        response='Энергия увеличилась'
     )
     print(f"   ✓ Structured entry created with ID: {entry_id}")
 
@@ -65,7 +67,7 @@ def test_database():
     assert len(entries) == 2, f"Expected 2 entries, found {len(entries)}"
     print(f"   ✓ Retrieved {len(entries)} entries")
     for i, entry in enumerate(entries, 1):
-        print(f"     - Entry {i}: {entry['entry_type']} at {entry['date']}")
+        print(f"     - Entry {i}: {entry['content'][:30]}... at {entry['date']}")
 
     # 7. Test refusal
     print("\n7. Testing refusal tracking...")
@@ -80,8 +82,11 @@ def test_database():
     db.ensure_user_exists(test_user_id_2)
     db.create_entry(
         telegram_user_id=test_user_id_2,
-        entry_type='raw_diary',
-        content='Different user entry'
+        content='Different user content',
+        attitude='Different user attitude',
+        form='Да-принимающее',
+        body='Нет, не совпадает',
+        response='Different user response'
     )
     user1_entries = db.get_user_entries(test_user_id)
     user2_entries = db.get_user_entries(test_user_id_2)

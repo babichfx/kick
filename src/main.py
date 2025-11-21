@@ -64,22 +64,67 @@ def main() -> None:
         if await check_password(update, context):
             return
 
-        # TODO: Add more text message handling here:
-        # - Reminder schedule configuration
-        # - Practice entry input
-        # - Diary entry input
-
-        # For now, just acknowledge the message for authenticated users
+        # Check authentication for all other handlers
         from handlers.auth import require_auth
-        if await require_auth(update, context):
-            logger.info(f"Message from user {update.effective_user.id}: {update.message.text[:50]}")
+        if not await require_auth(update, context):
+            return
+
+        # Route to appropriate mode handler
+        from handlers.practice import handle_practice_input
+        from handlers.reminders import handle_schedule_input
+
+        # Try guided practice mode
+        if await handle_practice_input(update, context):
+            return
+
+        # Try reminder schedule configuration
+        if await handle_schedule_input(update, context):
+            return
+
+        # Default: acknowledge the message
+        logger.info(f"Unhandled message from user {update.effective_user.id}: {update.message.text[:50]}")
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # TODO: Add more handlers as we implement them:
-    # - Voice message handlers
-    # - Callback query handlers for inline buttons
-    # - Reminder response handlers
+    # Voice message handler
+    async def handle_voice(update: Update, context) -> None:
+        """Route voice messages to appropriate handlers."""
+        from handlers.auth import require_auth
+        if not await require_auth(update, context):
+            return
+
+        # TODO: Add guided practice voice handling
+
+        # Default: acknowledge the message
+        logger.info(f"Unhandled voice from user {update.effective_user.id}")
+
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    # Callback query handler (for inline buttons)
+    async def handle_callback(update: Update, context) -> None:
+        """Route callback queries to appropriate handlers."""
+        from handlers.auth import require_auth
+        if not await require_auth(update, context):
+            return
+
+        from handlers.practice import handle_practice_callback
+        from handlers.reminders import handle_reminder_response
+
+        query = update.callback_query
+        callback_data = query.data
+
+        # Route based on callback_data prefix
+        if callback_data.startswith('field_'):
+            # Practice mode callbacks: field_ok, field_back
+            await handle_practice_callback(update, context)
+        elif callback_data.startswith('reminder_'):
+            await handle_reminder_response(update, context)
+        else:
+            # TODO: Add more callback handlers
+            logger.warning(f"Unhandled callback: {callback_data}")
+            await query.answer("Неизвестная команда.")
+
+    application.add_handler(CallbackQueryHandler(handle_callback))
 
     # Start polling
     logger.info("Bot started polling...")

@@ -66,18 +66,17 @@ def init_database():
             )
         ''')
 
-        # Entries table
+        # Entries table (structured practice only - all fields required)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS entries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 telegram_user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
-                entry_type TEXT NOT NULL,
                 content TEXT NOT NULL,
-                attitude TEXT,
-                form TEXT,
-                body TEXT,
-                response TEXT,
+                attitude TEXT NOT NULL,
+                form TEXT NOT NULL,
+                body TEXT NOT NULL,
+                response TEXT NOT NULL,
                 FOREIGN KEY (telegram_user_id) REFERENCES users(telegram_user_id)
             )
         ''')
@@ -189,22 +188,21 @@ def get_reminder_schedule(telegram_user_id: int) -> Optional[Dict[str, Any]]:
 
 def create_entry(
     telegram_user_id: int,
-    entry_type: str,
     content: str,
-    attitude: Optional[str] = None,
-    form: Optional[str] = None,
-    body: Optional[str] = None,
-    response: Optional[str] = None
+    attitude: str,
+    form: str,
+    body: str,
+    response: str
 ) -> int:
-    """Create new practice entry."""
+    """Create new structured practice entry (all fields required)."""
     now = datetime.now().isoformat()
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             INSERT INTO entries
-            (telegram_user_id, date, entry_type, content, attitude, form, body, response)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (telegram_user_id, now, entry_type, content, attitude, form, body, response))
+            (telegram_user_id, date, content, attitude, form, body, response)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (telegram_user_id, now, content, attitude, form, body, response))
         entry_id = cursor.lastrowid
         logger.info(f"Created entry {entry_id} for user {telegram_user_id}")
         return entry_id

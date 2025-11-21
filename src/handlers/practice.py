@@ -19,6 +19,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import logging
+import asyncio
+from typing import Dict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
@@ -27,14 +29,76 @@ import database as db
 
 logger = logging.getLogger(__name__)
 
+# Timer storage for message accumulation (per user, per field)
+field_timers: Dict[int, any] = {}
+field_message_parts: Dict[int, list] = {}
+
+
+async def send_field_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> None:
+    """
+    Send accumulated field message parts with confirmation button.
+
+    Args:
+        update: Telegram update
+        context: Telegram context
+        user_id: User ID
+    """
+    try:
+        # Get accumulated message parts
+        full_text = '\n'.join(field_message_parts[user_id])
+
+        # Store in current_answer
+        context.user_data['current_answer'] = full_text
+
+        # Get current field info
+        current_field_idx = context.user_data.get('current_field', 0)
+        current_field = PRACTICE_FIELDS[current_field_idx]
+
+        # Show confirmation button with back button if not on first field
+        current_field_idx = context.user_data.get('current_field', 0)
+        keyboard = []
+
+        if current_field_idx > 0:
+            # Add back and OK buttons side by side
+            keyboard.append([
+                InlineKeyboardButton("← Назад", callback_data='field_back'),
+                InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')
+            ])
+        else:
+            # Just OK button on first field
+            keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        confirmation_text = f"{full_text}\n\nПодтвердите ответ или добавьте что-то если необходимо."
+
+        # Send to chat
+        chat_id = update.effective_chat.id
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=confirmation_text,
+            reply_markup=reply_markup
+        )
+
+        # Clean up
+        del field_message_parts[user_id]
+        del field_timers[user_id]
+
+        logger.info(f"User {user_id} finished entering field '{current_field['name']}', awaiting confirmation")
+
+    except KeyError:
+        # Already cleaned up
+        pass
+    except Exception as e:
+        logger.error(f"Error in send_field_confirmation: {e}", exc_info=True)
+
 
 async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
     Handle user input during guided practice.
 
     This function is called from the main message handler when user is in guided_practice mode.
-    It collects the user's answer and shows confirmation button.
-    User can send multiple messages to add more - they accumulate automatically.
+    It collects the user's answer with 0.5 second buffering for multi-part messages.
 
     Returns:
         True if input was handled, False otherwise
@@ -56,24 +120,25 @@ async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TY
 
     current_field = PRACTICE_FIELDS[current_field_idx]
 
-    # Store or append to current answer
-    if context.user_data.get('current_answer') is None:
-        # First answer for this field
-        context.user_data['current_answer'] = user_text
-    else:
-        # User is adding more - append to existing answer
-        context.user_data['current_answer'] += "\n" + user_text
+    # Initialize message parts list if first message for this field
+    if user_id not in field_message_parts:
+        field_message_parts[user_id] = []
 
-    # Show the accumulated answer with confirmation button and explanation
-    keyboard = [
-        [InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Add message part
+    field_message_parts[user_id].append(user_text)
+    logger.debug(f"Accumulated message part for user {user_id}, field '{current_field['name']}', total parts: {len(field_message_parts[user_id])}")
 
-    confirmation_text = f"{context.user_data['current_answer']}\n\nПодтвердите ответ или добавьте что-то если необходимо."
-    await update.message.reply_text(confirmation_text, reply_markup=reply_markup)
+    # Cancel existing timer if any
+    if user_id in field_timers:
+        field_timers[user_id].cancel()
 
-    logger.info(f"User {user_id} answered field '{current_field['name']}', awaiting confirmation")
+    # Start new timer (0.5 seconds delay)
+    loop = asyncio.get_event_loop()
+    field_timers[user_id] = loop.call_later(
+        0.5,
+        asyncio.create_task,
+        send_field_confirmation(update, context, user_id)
+    )
 
     return True
 
@@ -82,8 +147,9 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
     """
     Handle callback queries during guided practice.
 
-    Handles callback type:
+    Handles callback types:
     - field_ok: Accept current answer and move to next field
+    - field_back: Go back to previous field
     """
     query = update.callback_query
     await query.answer()
@@ -106,6 +172,11 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
 
             current_field = PRACTICE_FIELDS[current_field_idx]
             current_answer = context.user_data.get('current_answer', '')
+
+            # Validate that answer is not empty
+            if not current_answer or not current_answer.strip():
+                await query.message.reply_text("Ответ не может быть пустым. Отправьте текст.")
+                return
 
             # Save answer to practice_data
             context.user_data['practice_data'][current_field['name']] = current_answer
@@ -131,6 +202,59 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                 # All fields completed - save to database
                 await complete_practice(update, context, query.message)
 
+        elif callback_data == 'field_back':
+            # User wants to go back to previous field
+            current_field_idx = context.user_data.get('current_field', 0)
+
+            if current_field_idx <= 0:
+                # Already on first field, can't go back
+                await query.answer("Это первый шаг.")
+                return
+
+            # Cancel any pending timer for current field
+            if user_id in field_timers:
+                field_timers[user_id].cancel()
+                del field_timers[user_id]
+            if user_id in field_message_parts:
+                del field_message_parts[user_id]
+
+            # Delete the confirmation message
+            await query.message.delete()
+
+            # Move back one field
+            prev_field_idx = current_field_idx - 1
+            context.user_data['current_field'] = prev_field_idx
+            prev_field = PRACTICE_FIELDS[prev_field_idx]
+
+            # Get previously saved answer for this field
+            prev_answer = context.user_data['practice_data'].get(prev_field['name'], '')
+
+            # Set current answer to previous answer (user can keep it or replace it)
+            context.user_data['current_answer'] = prev_answer
+
+            # Show previous field with confirmation button showing previous answer
+            if prev_answer:
+                # Show with back button if not first field
+                keyboard = []
+                if prev_field_idx > 0:
+                    keyboard.append([
+                        InlineKeyboardButton("← Назад", callback_data='field_back'),
+                        InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')
+                    ])
+                else:
+                    keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
+
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                message_text = f"{prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
+                await query.message.reply_text(message_text, reply_markup=reply_markup)
+            else:
+                # No previous answer, just show prompt
+                message_text = prev_field['prompt']
+                await query.message.reply_text(message_text)
+                context.user_data['current_answer'] = None
+
+            logger.info(f"User {user_id} went back to field '{prev_field['name']}'")
+
     except Exception as e:
         logger.error(f"Error handling practice callback for user {user_id}: {e}", exc_info=True)
         await query.message.reply_text("Произошла ошибка. Попробуйте еще раз.")
@@ -149,7 +273,6 @@ async def complete_practice(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         # Create entry in database
         entry_id = db.create_entry(
             telegram_user_id=user_id,
-            entry_type='structured_practice',
             content=practice_data.get('content', ''),
             attitude=practice_data.get('attitude', ''),
             form=practice_data.get('form', ''),
@@ -162,6 +285,13 @@ async def complete_practice(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         context.user_data['current_field'] = None
         context.user_data['practice_data'] = {}
         context.user_data['current_answer'] = None
+
+        # Clean up any pending timers
+        if user_id in field_timers:
+            field_timers[user_id].cancel()
+            del field_timers[user_id]
+        if user_id in field_message_parts:
+            del field_message_parts[user_id]
 
         # Confirm to user
         await message.reply_text(BotPhrases.PRACTICE_SAVED)
