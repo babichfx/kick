@@ -19,8 +19,21 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import logging
+
+from src import database as db
+from src.handlers.practice import (
+    handle_practice_input,
+    handle_practice_callback
+)
+from src.handlers.reminders import handle_reminder_response
 
 
 # Mock classes for testing without Telegram
@@ -113,13 +126,6 @@ async def test_guided_practice_flow():
     3. User can refine answers unlimited times
     4. Practice is saved to database
     """
-    import database as db
-    from handlers.practice import (
-        handle_practice_input,
-        handle_practice_callback
-    )
-    from handlers.reminders import handle_reminder_response
-
     print("\n" + "="*80)
     print("TEST: GUIDED PRACTICE FLOW")
     print("="*80 + "\n")
@@ -251,12 +257,6 @@ async def test_multiple_refinements():
 
     Demonstrates that user can add to answer multiple times by just sending text.
     """
-    import database as db
-    from handlers.practice import (
-        handle_practice_input,
-        handle_practice_callback
-    )
-
     print("\n" + "="*80)
     print("TEST: UNLIMITED REFINEMENTS (NO BUTTON NEEDED)")
     print("="*80 + "\n")
@@ -318,8 +318,6 @@ async def test_multiple_refinements():
 
 async def run_all_tests():
     """Run all practice handler tests."""
-    import database as db
-
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'

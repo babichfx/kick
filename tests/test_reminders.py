@@ -19,9 +19,25 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import logging
 from datetime import datetime
+
+from src import database as db
+from src.services import scheduler
+from src.handlers.reminders import (
+    setup_schedule_command,
+    handle_schedule_input,
+    handle_reminder_response,
+    view_schedule_command,
+    disable_schedule_command
+)
 
 
 # Mock classes for testing without Telegram
@@ -110,13 +126,6 @@ async def test_schedule_setup():
     2. User provides natural language schedule
     3. Schedule is parsed, saved, and activated
     """
-    import database as db
-    from services import scheduler
-    from handlers.reminders import (
-        setup_schedule_command,
-        handle_schedule_input
-    )
-
     print("\n" + "="*80)
     print("TEST: SCHEDULE CONFIGURATION")
     print("="*80 + "\n")
@@ -170,10 +179,6 @@ async def test_reminder_callbacks():
     2. User clicks different button options
     3. Appropriate mode is set in context
     """
-    import database as db
-    from services import scheduler
-    from handlers.reminders import handle_reminder_response
-
     print("\n" + "="*80)
     print("TEST: REMINDER CALLBACKS")
     print("="*80 + "\n")
@@ -227,15 +232,6 @@ async def test_schedule_management():
     2. Disable schedule
     3. Re-enable schedule
     """
-    import database as db
-    from services import scheduler
-    from handlers.reminders import (
-        view_schedule_command,
-        disable_schedule_command,
-        setup_schedule_command,
-        handle_schedule_input
-    )
-
     print("\n" + "="*80)
     print("TEST: SCHEDULE MANAGEMENT")
     print("="*80 + "\n")
@@ -292,14 +288,6 @@ async def test_full_flow():
 
     Demonstrates the full user journey from setup to reminder response.
     """
-    import database as db
-    from services import scheduler
-    from handlers.reminders import (
-        setup_schedule_command,
-        handle_schedule_input,
-        handle_reminder_response
-    )
-
     print("\n" + "="*80)
     print("TEST: FULL END-TO-END FLOW")
     print("="*80 + "\n")
@@ -350,9 +338,6 @@ async def test_full_flow():
 
 async def run_all_tests():
     """Run all reminder handler tests."""
-    import database as db
-    from services import scheduler
-
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'

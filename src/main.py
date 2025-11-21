@@ -48,14 +48,22 @@ def main() -> None:
     # Initialize database
     init_database()
 
+    # Initialize scheduler
+    from services.scheduler import init_scheduler
+    init_scheduler()
+
     # Build application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
     # Import handlers (imported here to avoid circular imports)
     from handlers.auth import start_command, check_password
+    from handlers.reminders import setup_schedule_command, view_schedule_command, disable_schedule_command
 
     # Register command handlers
     application.add_handler(CommandHandler('start', start_command))
+    application.add_handler(CommandHandler('schedule', setup_schedule_command))
+    application.add_handler(CommandHandler('view_schedule', view_schedule_command))
+    application.add_handler(CommandHandler('disable_schedule', disable_schedule_command))
 
     # Text message handler (for password authentication and future features)
     async def handle_text(update: Update, context) -> None:

@@ -123,6 +123,10 @@ async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TY
     # Initialize message parts list if first message for this field
     if user_id not in field_message_parts:
         field_message_parts[user_id] = []
+        # If there's already a current_answer (user is adding more text after confirmation),
+        # include it as the first part
+        if context.user_data.get('current_answer'):
+            field_message_parts[user_id].append(context.user_data['current_answer'])
 
     # Add message part
     field_message_parts[user_id].append(user_text)
@@ -232,9 +236,9 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             # Set current answer to previous answer (user can keep it or replace it)
             context.user_data['current_answer'] = prev_answer
 
-            # Show previous field with confirmation button showing previous answer
+            # Show previous field with question prompt and previous answer
             if prev_answer:
-                # Show with back button if not first field
+                # Show question + previous answer + confirmation button
                 keyboard = []
                 if prev_field_idx > 0:
                     keyboard.append([
@@ -245,7 +249,8 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                     keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
 
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                message_text = f"{prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
+                # Include the question prompt so user remembers what they were answering
+                message_text = f"{prev_field['prompt']}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
                 await query.message.reply_text(message_text, reply_markup=reply_markup)
             else:
                 # No previous answer, just show prompt

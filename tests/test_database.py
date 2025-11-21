@@ -2,7 +2,13 @@
 Quick test script for database operations.
 """
 
-import database as db
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src import database as db
 
 def test_database():
     """Test basic database operations."""

@@ -18,9 +18,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
+import sys
+from pathlib import Path
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import asyncio
 import logging
-from services.schedule_parser import parse_schedule, format_schedule_summary
+from src.services.schedule_parser import parse_schedule, format_schedule_summary
 
 # Setup logging
 logging.basicConfig(
