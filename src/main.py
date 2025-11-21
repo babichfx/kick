@@ -62,7 +62,13 @@ def main() -> None:
 
     # Import handlers (imported here to avoid circular imports)
     from handlers.auth import start_command, check_password
-    from handlers.reminders import setup_schedule_command, view_schedule_command, disable_schedule_command
+    from handlers.reminders import (
+        setup_schedule_command,
+        view_schedule_command,
+        disable_schedule_command,
+        handle_timezone_selection,
+        handle_custom_timezone_input
+    )
 
     # Register command handlers
     application.add_handler(CommandHandler('start', start_command))
@@ -84,7 +90,11 @@ def main() -> None:
 
         # Route to appropriate mode handler
         from handlers.practice import handle_practice_input
-        from handlers.reminders import handle_schedule_input
+        from handlers.reminders import handle_schedule_input, handle_custom_timezone_input
+
+        # Try custom timezone input
+        if await handle_custom_timezone_input(update, context):
+            return
 
         # Try guided practice mode
         if await handle_practice_input(update, context):
@@ -129,20 +139,27 @@ def main() -> None:
             return
 
         from handlers.practice import handle_practice_callback
-        from handlers.reminders import handle_reminder_response, handle_schedule_verification
+        from handlers.reminders import (
+            handle_reminder_response,
+            handle_schedule_verification,
+            handle_timezone_selection
+        )
 
         query = update.callback_query
         callback_data = query.data
 
         # Route based on callback_data prefix
-        if callback_data.startswith('field_'):
-            # Practice mode callbacks: field_ok, field_back
+        if callback_data.startswith('field_') or callback_data.startswith('form_'):
+            # Practice mode callbacks: field_ok, field_back, form_yes_accepting, etc.
             await handle_practice_callback(update, context)
         elif callback_data.startswith('reminder_'):
             await handle_reminder_response(update, context)
         elif callback_data.startswith('schedule_'):
             # Schedule verification callbacks: schedule_confirm, schedule_cancel
             await handle_schedule_verification(update, context)
+        elif callback_data.startswith('tz_'):
+            # Timezone selection callbacks: tz_Europe/Moscow, tz_custom, etc.
+            await handle_timezone_selection(update, context)
         else:
             # TODO: Add more callback handlers
             logger.warning(f"Unhandled callback: {callback_data}")

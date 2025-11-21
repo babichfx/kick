@@ -42,6 +42,66 @@ async def setup_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
 
     user_id = update.effective_user.id
 
+    # Check if user has timezone set
+    user_timezone = db.get_user_timezone(user_id)
+
+    # If no timezone set (or default), ask user to confirm or set timezone
+    if not user_timezone or user_timezone == 'Europe/Moscow':
+        # Ask for timezone with common options
+        keyboard = [
+            [InlineKeyboardButton("UTC+0 — Лондон, Лиссабон, Касабланка",
+                                  callback_data="tz_Europe/London")],
+            [InlineKeyboardButton("UTC+1 — Берлин, Париж, Рим, Мадрид",
+                                  callback_data="tz_Europe/Berlin")],
+            [InlineKeyboardButton("UTC+2 — Киев, Каир, Калининград",
+                                  callback_data="tz_Europe/Kyiv")],
+            [InlineKeyboardButton("UTC+3 — Москва, Стамбул, Найроби",
+                                  callback_data="tz_Europe/Moscow")],
+            [InlineKeyboardButton("UTC+4 — Дубай, Баку, Самара, Ереван",
+                                  callback_data="tz_Asia/Dubai")],
+            [InlineKeyboardButton("UTC+5 — Екатеринбург, Ташкент, Карачи",
+                                  callback_data="tz_Asia/Tashkent")],
+            [InlineKeyboardButton("UTC+5:30 — Нью-Дели, Мумбаи, Калькутта",
+                                  callback_data="tz_Asia/Kolkata")],
+            [InlineKeyboardButton("UTC+6 — Алматы, Дакка, Бишкек, Омск",
+                                  callback_data="tz_Asia/Almaty")],
+            [InlineKeyboardButton("UTC+6:30 — Янгон, Нейпьидо, Мандалай",
+                                  callback_data="tz_Asia/Yangon")],
+            [InlineKeyboardButton("UTC+7 — Новосибирск, Бангкок, Джакарта",
+                                  callback_data="tz_Asia/Bangkok")],
+            [InlineKeyboardButton("UTC+8 — Иркутск, Гонконг, Сингапур",
+                                  callback_data="tz_Asia/Shanghai")],
+            [InlineKeyboardButton("UTC+9 — Якутск, Токио, Сеул",
+                                  callback_data="tz_Asia/Tokyo")],
+            [InlineKeyboardButton("UTC+9:30 — Аделаида, Дарвин",
+                                  callback_data="tz_Australia/Adelaide")],
+            [InlineKeyboardButton("UTC+10 — Владивосток, Сидней, Мельбурн",
+                                  callback_data="tz_Australia/Sydney")],
+            [InlineKeyboardButton("UTC+10:30 — остров Лорд-Хау",
+                                  callback_data="tz_Australia/Lord_Howe")],
+            [InlineKeyboardButton("UTC+11 — Магадан, Сахалин, Нумеа",
+                                  callback_data="tz_Asia/Magadan")],
+            [InlineKeyboardButton("UTC+12 — Петропавловск-Камчатский, Анадырь",
+                                  callback_data="tz_Pacific/Auckland")],
+            [InlineKeyboardButton("UTC+13 — Токелау, Нукуалофа, Апиа",
+                                  callback_data="tz_Pacific/Tongatapu")],
+            [InlineKeyboardButton("UTC+14 — Киритимати (Остров Рождества)",
+                                  callback_data="tz_Pacific/Kiritimati")],
+            [InlineKeyboardButton("Другой часовой пояс",
+                                  callback_data="tz_custom")],
+        ]
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        context.user_data['setting_timezone'] = True
+
+        await update.message.reply_text(
+            "В каком часовом поясе вы находитесь?",
+            reply_markup=reply_markup
+        )
+        logger.info(f"User {user_id} asked for timezone selection")
+        return
+
     # Set state to await schedule input
     context.user_data['awaiting_schedule'] = True
 
@@ -108,8 +168,11 @@ async def handle_schedule_input(update: Update, context: ContextTypes.DEFAULT_TY
     logger.info(f"User {user_id} sent schedule request: {schedule_text}")
 
     try:
-        # Parse schedule using GPT
-        schedule = await parse_schedule(schedule_text)
+        # Get user timezone
+        user_timezone = db.get_user_timezone(user_id)
+
+        # Parse schedule using GPT with user's timezone
+        schedule = await parse_schedule(schedule_text, user_timezone)
 
         if not schedule:
             await update.message.reply_text(
@@ -185,8 +248,11 @@ async def handle_schedule_verification(update: Update, context: ContextTypes.DEF
             # Delete verification message
             await query.message.delete()
 
-            # Parse schedule using GPT
-            schedule = await parse_schedule(schedule_text)
+            # Get user timezone
+            user_timezone = db.get_user_timezone(user_id)
+
+            # Parse schedule using GPT with user's timezone
+            schedule = await parse_schedule(schedule_text, user_timezone)
 
             if not schedule:
                 await query.message.reply_text(
@@ -333,9 +399,10 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
 
             # Send prompt for first field (content)
             from config import PRACTICE_FIELDS
+            from handlers.practice import send_field_prompt
             first_field = PRACTICE_FIELDS[0]
 
-            await query.message.reply_text(first_field['prompt'])
+            await send_field_prompt(query.message, first_field, 0)
 
             logger.info(f"User {user_id} started guided practice")
 
@@ -351,3 +418,119 @@ async def handle_reminder_response(update: Update, context: ContextTypes.DEFAULT
     except Exception as e:
         logger.error(f"Error handling reminder response for user {user_id}: {e}", exc_info=True)
         await query.message.reply_text("Произошла ошибка. Попробуйте еще раз.")
+
+
+async def handle_timezone_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle callback queries from timezone selection buttons.
+
+    Handles timezone selection and custom timezone input.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    callback_data = query.data
+
+    logger.info(f"User {user_id} selected timezone: {callback_data}")
+
+    try:
+        if callback_data.startswith('tz_') and callback_data != 'tz_custom':
+            # Extract timezone from callback data
+            timezone = callback_data[3:]  # Remove 'tz_' prefix
+
+            # Validate timezone using pytz
+            import pytz
+            try:
+                pytz.timezone(timezone)
+            except pytz.exceptions.UnknownTimeZoneError:
+                await query.message.edit_text(
+                    f"Неверный часовой пояс: {timezone}. Попробуйте еще раз."
+                )
+                context.user_data['setting_timezone'] = False
+                return
+
+            # Save timezone to database
+            db.set_user_timezone(user_id, timezone)
+
+            # Delete timezone selection message
+            await query.message.delete()
+
+            # Clear timezone setting flag and start schedule input
+            context.user_data['setting_timezone'] = False
+            context.user_data['awaiting_schedule'] = True
+
+            # Prompt for schedule
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
+            )
+
+            logger.info(f"User {user_id} set timezone to {timezone}")
+
+        elif callback_data == 'tz_custom':
+            # User wants to enter custom timezone
+            await query.message.edit_text(
+                "Отправьте название часового пояса в формате 'Region/City' (например, 'Europe/Paris', 'Asia/Tokyo').\n\n"
+                "Список доступных часовых поясов: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+            )
+
+            # Set flag to await custom timezone input
+            context.user_data['awaiting_custom_timezone'] = True
+            context.user_data['setting_timezone'] = False
+
+            logger.info(f"User {user_id} requested custom timezone input")
+
+    except Exception as e:
+        logger.error(f"Error handling timezone selection for user {user_id}: {e}", exc_info=True)
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="Произошла ошибка при установке часового пояса. Попробуйте еще раз."
+        )
+        context.user_data['setting_timezone'] = False
+
+
+async def handle_custom_timezone_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Handle custom timezone input from user.
+
+    Called from main message handler when awaiting_custom_timezone flag is set.
+
+    Returns:
+        True if custom timezone input was handled, False otherwise
+    """
+    user_id = update.effective_user.id
+
+    # Check if we're waiting for custom timezone input
+    if not context.user_data.get('awaiting_custom_timezone', False):
+        return False
+
+    timezone = update.message.text.strip()
+
+    logger.info(f"User {user_id} sent custom timezone: {timezone}")
+
+    # Validate timezone using pytz
+    import pytz
+    try:
+        pytz.timezone(timezone)
+    except pytz.exceptions.UnknownTimeZoneError:
+        await update.message.reply_text(
+            f"Неверный часовой пояс: {timezone}. Попробуйте еще раз или используйте /schedule для выбора из списка."
+        )
+        context.user_data['awaiting_custom_timezone'] = False
+        return True
+
+    # Save timezone to database
+    db.set_user_timezone(user_id, timezone)
+
+    # Clear flag and start schedule input
+    context.user_data['awaiting_custom_timezone'] = False
+    context.user_data['awaiting_schedule'] = True
+
+    # Prompt for schedule
+    await update.message.reply_text(
+        f"Часовой пояс установлен: {timezone}\n\n{BotPhrases.REMINDER_REQUEST}"
+    )
+
+    logger.info(f"User {user_id} set custom timezone to {timezone}")
+    return True

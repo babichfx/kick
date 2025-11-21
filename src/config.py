@@ -74,11 +74,11 @@ class BotPhrases:
     PRACTICE_SAVED = "Запись сохранена."
 
     # Practice fields
-    FIELD_CONTENT = "Содержание: что в поле внимания?"
-    FIELD_ATTITUDE = "Отношение: баланс напряжения и расслабления в теле?"
-    FIELD_FORM = "Форма согласия: да-принимающее, нет-принимающее, да-отвергающее, нет-отвергающее?"
-    FIELD_BODY = "Реакция тела: осознавание совпадает с реакцией тела?"
-    FIELD_RESPONSE = "Изменения: что происходит после осознавания?"
+    FIELD_CONTENT = "Обрати внимание на какое-то содержание, которое находится в поле внимания (внутреннее или внешнее)."
+    FIELD_ATTITUDE = "Осознай своё отношение к этому содержанию - обрати внимание на тело, на баланс расслабления и напряжения по поводу этого содержания."
+    FIELD_FORM = "Подбери свою форму выражения этого отношения, вербализовав его, используя наши формы согласия и отрицания (да-принимающее, нет-принимающее, да-отрицающее, нет-отрицающее)."
+    FIELD_BODY = "Озвучь для себя и обрати внимание соответствует ли то, что ты осознал телесной реакции."
+    FIELD_RESPONSE = "Обрати внимание, что будет происходить с тобой после осознания."
 
     # Diary mode
     DIARY_PROMPT = "Отправь голосовое сообщение или напиши текст."
@@ -86,7 +86,6 @@ class BotPhrases:
 
     # Input refinement
     INPUT_CONFIRM = "Всё ок"
-    INPUT_REFINE = "Уточнить/добавить"
     INPUT_QUESTIONS = "Задать наводящие вопросы по теме"
     INPUT_COMPLETE = "Завершить"
 
@@ -102,7 +101,7 @@ class BotPhrases:
     DATA_CLEAR_CONFIRM = "Вы уверены? Все записи будут удалены без возможности восстановления."
 
     # Buttons
-    BTN_YES_GUIDED = "Да, пошагово"
+    BTN_YES_GUIDED = "Да"
     BTN_NO = "Нет"
     BTN_OK = "Всё ок"
     BTN_QUESTIONS = "Задать наводящие вопросы"
@@ -151,7 +150,13 @@ class SystemPrompts:
     """System prompts for GPT tasks."""
 
     SCHEDULE_PARSER = """Speak Russian. Parse natural language reminder request into specific times.
-If request is vague (e.g., "morning", "lunch time", "often"), make reasonable assumptions:
+
+You will receive current date/time context at the beginning of the user's message. Use this context to interpret:
+- Relative time references like "завтра" (tomorrow), "сегодня" (today), "через час" (in an hour)
+- Weekday references like "в будни" (weekdays), "в понедельник" (on Monday)
+- Time-relative phrases like "после обеда" (after lunch), based on current time
+
+If request is vague, make reasonable assumptions:
 - Morning (утро): 08:00-12:00
 - Lunch (обед): 12:00-14:00
 - Afternoon (день): 14:00-18:00
@@ -162,7 +167,7 @@ Output ONLY a valid JSON object in this exact format:
 {
   "times": ["HH:MM", "HH:MM", ...],
   "day_filter": "all" | "weekdays" | "weekends",
-  "timezone": "Europe/Moscow"
+  "timezone": "<user's timezone from context>"
 }
 
 day_filter values:
@@ -170,25 +175,11 @@ day_filter values:
 - "weekdays": Monday to Friday only
 - "weekends": Saturday and Sunday only
 
-Do NOT add any explanations, markdown, or extra text. Just the JSON object."""
+IMPORTANT: Use the timezone provided in the context for the "timezone" field.
 
-    ENTRY_SUMMARIZER = """Speak Russian. Extract structured fields from user's awareness practice text.
-Use ONLY the user's exact words - do not interpret, add, or modify anything.
-
-Output ONLY a valid JSON object in this exact format:
-{
-  "content": "exact user words about what's in field of attention",
-  "attitude": "exact user words about body status and tension/relaxation",
-  "form": "exact user words about acceptance/rejection form",
-  "body": "exact user words about body reaction match",
-  "response": "exact user words about what changed"
-}
-
-If a field is not mentioned, use empty string "".
 Do NOT add any explanations, markdown, or extra text. Just the JSON object."""
 
     GUIDING_QUESTIONS = """
-
     """
 
 logger.info("Configuration loaded successfully")

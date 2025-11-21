@@ -228,6 +228,32 @@ async def handle_practice_voice(update: Update, context: ContextTypes.DEFAULT_TY
         return True
 
 
+async def send_field_prompt(message, field, field_idx: int) -> None:
+    """
+    Send field prompt with optional inline buttons for form field.
+
+    Args:
+        message: Telegram message object to reply to
+        field: Field configuration dict
+        field_idx: Index of the current field
+    """
+    prompt_text = field['prompt']
+
+    # Add form selection buttons for the form field (index 2)
+    if field_idx == 2:  # form field
+        keyboard = [
+            [InlineKeyboardButton("Да-принимающее", callback_data='form_yes_accepting')],
+            [InlineKeyboardButton("Нет-принимающее", callback_data='form_no_accepting')],
+            [InlineKeyboardButton("Да-отрицающее", callback_data='form_yes_rejecting')],
+            [InlineKeyboardButton("Нет-отрицающее", callback_data='form_no_rejecting')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text(prompt_text, reply_markup=reply_markup)
+    else:
+        # Regular field - just send text prompt
+        await message.reply_text(prompt_text)
+
+
 async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle callback queries during guided practice.
@@ -235,6 +261,7 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
     Handles callback types:
     - field_ok: Accept current answer and move to next field
     - field_back: Go back to previous field
+    - form_yes_accepting/form_no_accepting/form_yes_rejecting/form_no_rejecting: Form selection buttons
     """
     query = update.callback_query
     await query.answer()
@@ -247,6 +274,42 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     try:
+        # Handle form selection buttons
+        if callback_data.startswith('form_'):
+            current_field_idx = context.user_data.get('current_field', 0)
+
+            # Map callback data to form text
+            form_map = {
+                'form_yes_accepting': 'Да-принимающее',
+                'form_no_accepting': 'Нет-принимающее',
+                'form_yes_rejecting': 'Да-отрицающее',
+                'form_no_rejecting': 'Нет-отрицающее'
+            }
+
+            selected_form = form_map.get(callback_data, '')
+
+            if not selected_form:
+                logger.error(f"Unknown form callback: {callback_data}")
+                return
+
+            # Save the form selection
+            context.user_data['practice_data']['form'] = selected_form
+            context.user_data['current_answer'] = None
+
+            # Delete the form selection message
+            await query.message.delete()
+
+            # Move to next field (body)
+            next_field_idx = current_field_idx + 1
+            context.user_data['current_field'] = next_field_idx
+            next_field = PRACTICE_FIELDS[next_field_idx]
+
+            # Send prompt for next field
+            await send_field_prompt(query.message, next_field, next_field_idx)
+
+            logger.info(f"User {user_id} selected form '{selected_form}', moved to field '{next_field['name']}'")
+            return
+
         if callback_data == 'field_ok':
             # User confirmed the answer - save it and move to next field
             current_field_idx = context.user_data.get('current_field', 0)
@@ -279,7 +342,7 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                 next_field = PRACTICE_FIELDS[next_field_idx]
 
                 # Send prompt for next field
-                await query.message.reply_text(next_field['prompt'])
+                await send_field_prompt(query.message, next_field, next_field_idx)
 
                 logger.info(f"User {user_id} moved to field '{next_field['name']}'")
 
@@ -334,9 +397,8 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                 message_text = f"{prev_field['prompt']}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
                 await query.message.reply_text(message_text, reply_markup=reply_markup)
             else:
-                # No previous answer, just show prompt
-                message_text = prev_field['prompt']
-                await query.message.reply_text(message_text)
+                # No previous answer, show prompt (with form buttons if form field)
+                await send_field_prompt(query.message, prev_field, prev_field_idx)
                 context.user_data['current_answer'] = None
 
             logger.info(f"User {user_id} went back to field '{prev_field['name']}'")

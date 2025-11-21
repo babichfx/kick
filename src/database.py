@@ -62,7 +62,8 @@ def init_database():
                 is_authenticated INTEGER NOT NULL DEFAULT 0,
                 first_auth_date TEXT,
                 last_active TEXT,
-                reminder_schedule TEXT
+                reminder_schedule TEXT,
+                timezone TEXT DEFAULT 'Europe/Moscow'
             )
         ''')
 
@@ -198,6 +199,46 @@ def get_reminder_schedule(telegram_user_id: int) -> Optional[Dict[str, Any]]:
 
         logger.debug(f"No reminder schedule set for user {telegram_user_id}")
         return None
+
+
+def get_user_timezone(telegram_user_id: int) -> str:
+    """Get user's timezone. Returns 'Europe/Moscow' as default."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT timezone FROM users WHERE telegram_user_id = ?',
+            (telegram_user_id,)
+        )
+        row = cursor.fetchone()
+
+        if not row:
+            logger.warning(f"User {telegram_user_id} not found when getting timezone")
+            return 'Europe/Moscow'
+
+        timezone = row['timezone'] or 'Europe/Moscow'
+        logger.debug(f"Retrieved timezone for user {telegram_user_id}: {timezone}")
+        return timezone
+
+
+def set_user_timezone(telegram_user_id: int, timezone: str) -> None:
+    """Set user's timezone."""
+    # Ensure user exists before updating
+    ensure_user_exists(telegram_user_id)
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users
+            SET timezone = ?
+            WHERE telegram_user_id = ?
+        ''', (timezone, telegram_user_id))
+
+        # Verify the update was successful
+        if cursor.rowcount == 0:
+            logger.error(f"Failed to set timezone for user {telegram_user_id} - no rows updated")
+            raise ValueError(f"User {telegram_user_id} not found in database")
+
+        logger.info(f"Set timezone for user {telegram_user_id}: {timezone}")
 
 
 # ============================================

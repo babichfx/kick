@@ -21,8 +21,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import json
 import logging
 import re
+from datetime import datetime
 from typing import Dict, List, Optional
 from openai import AsyncOpenAI
+import pytz
 
 from config import OPENAI_API_KEY, SystemPrompts
 
@@ -32,7 +34,7 @@ logger = logging.getLogger(__name__)
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 
-async def parse_schedule(user_input: str) -> Optional[Dict[str, any]]:
+async def parse_schedule(user_input: str, user_timezone: str = "Europe/Moscow") -> Optional[Dict[str, any]]:
     """
     Parse natural language reminder request into structured schedule.
 
@@ -57,6 +59,7 @@ async def parse_schedule(user_input: str) -> Optional[Dict[str, any]]:
 
     Args:
         user_input: Natural language reminder request in Russian or English
+        user_timezone: User's timezone (e.g., "Europe/Moscow")
 
     Returns:
         Dict with structure:
@@ -68,14 +71,33 @@ async def parse_schedule(user_input: str) -> Optional[Dict[str, any]]:
         Returns None if parsing fails
     """
     try:
-        logger.info(f"Parsing schedule request: {user_input[:100]}")
+        logger.info(f"Parsing schedule request: {user_input[:100]} (timezone: {user_timezone})")
+
+        # Get current datetime in user's timezone
+        tz = pytz.timezone(user_timezone)
+        now = datetime.now(tz)
+
+        # Format context with current date, time, and day of week
+        day_names_en = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        day_names_ru = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье']
+        day_name_en = day_names_en[now.weekday()]
+        day_name_ru = day_names_ru[now.weekday()]
+
+        context = (
+            f"Context: Today is {day_name_en} ({day_name_ru}), "
+            f"{now.strftime('%Y-%m-%d')}, current time is {now.strftime('%H:%M')} "
+            f"(timezone: {user_timezone}).\n\n"
+            f"User request: {user_input}"
+        )
+
+        logger.debug(f"Injecting context: {context[:200]}")
 
         # Call GPT with schedule parsing system prompt
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SystemPrompts.SCHEDULE_PARSER},
-                {"role": "user", "content": user_input}
+                {"role": "user", "content": context}
             ],
             temperature=0.3,  # Low temperature for more consistent parsing
             max_tokens=500
