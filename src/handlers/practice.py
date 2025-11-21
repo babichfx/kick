@@ -81,8 +81,11 @@ async def send_field_confirmation(update: Update, context: ContextTypes.DEFAULT_
             except Exception as e:
                 logger.warning(f"Could not remove button from previous confirmation: {e}")
 
-        # Show only OK button (no back button here)
-        keyboard = [[InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]]
+        # Show Rewrite and OK buttons
+        keyboard = [
+            [InlineKeyboardButton(BotPhrases.BTN_REWRITE, callback_data='field_rewrite')],
+            [InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         confirmation_text = f"{full_text}\n\nПодтвердите ответ или добавьте что-то если необходимо."
@@ -142,9 +145,12 @@ async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TY
     if user_id not in field_message_parts:
         field_message_parts[user_id] = []
         # If there's already a current_answer (user is adding more text after confirmation),
-        # include it as the first part
-        if context.user_data.get('current_answer'):
+        # include it as the first part - UNLESS we're rewriting
+        if context.user_data.get('current_answer') and not context.user_data.get('rewriting_answer'):
             field_message_parts[user_id].append(context.user_data['current_answer'])
+        # Clear rewriting flag after first input
+        if context.user_data.get('rewriting_answer'):
+            context.user_data['rewriting_answer'] = False
 
     # Add message part
     field_message_parts[user_id].append(user_text)
@@ -218,9 +224,12 @@ async def handle_practice_voice(update: Update, context: ContextTypes.DEFAULT_TY
         if user_id not in field_message_parts:
             field_message_parts[user_id] = []
             # If there's already a current_answer (user is adding more text after confirmation),
-            # include it as the first part
-            if context.user_data.get('current_answer'):
+            # include it as the first part - UNLESS we're rewriting
+            if context.user_data.get('current_answer') and not context.user_data.get('rewriting_answer'):
                 field_message_parts[user_id].append(context.user_data['current_answer'])
+            # Clear rewriting flag after first input
+            if context.user_data.get('rewriting_answer'):
+                context.user_data['rewriting_answer'] = False
 
         # Add transcribed text to message parts
         field_message_parts[user_id].append(transcribed_text)
@@ -348,7 +357,34 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             logger.info(f"User {user_id} selected form '{selected_form}', moved to field '{next_field['name']}'")
             return
 
-        if callback_data == 'field_ok':
+        if callback_data == 'field_rewrite':
+            # User wants to rewrite the answer - show just the question and clear the answer
+            current_field_idx = context.user_data.get('current_field', 0)
+
+            if current_field_idx >= len(PRACTICE_FIELDS):
+                logger.error(f"Invalid field index {current_field_idx} for user {user_id}")
+                return
+
+            current_field = PRACTICE_FIELDS[current_field_idx]
+
+            # Delete the confirmation message
+            await query.message.delete()
+
+            # Clear confirmation message ID since it's deleted
+            context.user_data['confirmation_message_id'] = None
+
+            # Clear the current answer to start fresh
+            context.user_data['current_answer'] = None
+
+            # Set a flag to indicate we're rewriting (so new input replaces instead of appends)
+            context.user_data['rewriting_answer'] = True
+
+            # Show the field prompt again (just the question)
+            await send_field_prompt(query.message, current_field, current_field_idx, context)
+
+            logger.info(f"User {user_id} is rewriting answer for field '{current_field['name']}'")
+
+        elif callback_data == 'field_ok':
             # User confirmed the answer - save it and move to next field
             current_field_idx = context.user_data.get('current_field', 0)
 
@@ -367,6 +403,9 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
             # Save answer to practice_data
             context.user_data['practice_data'][current_field['name']] = current_answer
             context.user_data['current_answer'] = None  # Reset for next field
+
+            # Clear rewriting flag if it was set
+            context.user_data['rewriting_answer'] = False
 
             # Delete the confirmation message
             await query.message.delete()
@@ -473,14 +512,15 @@ async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT
                     confirmation_msg = await query.message.reply_text(message_text, reply_markup=reply_markup)
                     context.user_data['field_prompt_message_id'] = confirmation_msg.message_id
                 else:
-                    # Regular field with previous answer - show back and OK buttons
+                    # Regular field with previous answer - show back, rewrite and OK buttons
                     prompt_text = prev_field['prompt']
                     message_text = f"{prompt_text}\n\n→ {prev_answer}\n\nОтправьте новый ответ или нажмите 'Всё ок' чтобы оставить предыдущий."
 
-                    # Create keyboard with both back and OK buttons
+                    # Create keyboard with back, rewrite and OK buttons
                     keyboard = []
                     if prev_field_idx > 0:  # Add back button if not on first field
                         keyboard.append([InlineKeyboardButton("← Назад", callback_data='field_back')])
+                    keyboard.append([InlineKeyboardButton(BotPhrases.BTN_REWRITE, callback_data='field_rewrite')])
                     keyboard.append([InlineKeyboardButton(BotPhrases.BTN_OK, callback_data='field_ok')])
                     reply_markup = InlineKeyboardMarkup(keyboard)
 

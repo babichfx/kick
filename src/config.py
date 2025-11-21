@@ -104,6 +104,7 @@ class BotPhrases:
     BTN_YES_GUIDED = "Да"
     BTN_NO = "Нет"
     BTN_OK = "Всё ок"
+    BTN_REWRITE = "Переписать ответ"
     BTN_QUESTIONS = "Задать наводящие вопросы"
     BTN_COMPLETE = "Завершить"
     BTN_NEXT = "Далее"
