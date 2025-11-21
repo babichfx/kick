@@ -163,9 +163,14 @@ If request is vague (e.g., "morning", "lunch time", "often"), make reasonable as
 Output ONLY a valid JSON object in this exact format:
 {
   "times": ["HH:MM", "HH:MM", ...],
-  "weekdays_only": true/false,
+  "day_filter": "all" | "weekdays" | "weekends",
   "timezone": "Europe/Moscow"
 }
+
+day_filter values:
+- "all": every day (Monday-Sunday)
+- "weekdays": Monday to Friday only
+- "weekends": Saturday and Sunday only
 
 Do NOT add any explanations, markdown, or extra text. Just the JSON object."""
 

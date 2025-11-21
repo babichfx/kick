@@ -29,7 +29,7 @@ def test_database():
     print("\n3. Testing reminder schedule...")
     schedule = {
         "times": ["09:00", "13:00", "17:00", "21:00"],
-        "weekdays_only": False,
+        "day_filter": "weekdays",
         "timezone": "Europe/Moscow"
     }
     db.set_reminder_schedule(test_user_id, schedule)
