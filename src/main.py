@@ -36,6 +36,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+# Disable verbose httpx logs
+logging.getLogger('httpx').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,12 +52,13 @@ def main() -> None:
     # Initialize database
     init_database()
 
-    # Initialize scheduler
-    from services.scheduler import init_scheduler
-    init_scheduler()
-
     # Build application
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    # Initialize scheduler and set bot reference
+    from services.scheduler import init_scheduler, set_bot_application
+    init_scheduler()
+    set_bot_application(application)
 
     # Import handlers (imported here to avoid circular imports)
     from handlers.auth import start_command, check_password
@@ -101,7 +106,15 @@ def main() -> None:
         if not await require_auth(update, context):
             return
 
-        # TODO: Add guided practice voice handling
+        # Try guided practice mode
+        from handlers.practice import handle_practice_voice
+        if await handle_practice_voice(update, context):
+            return
+
+        # Try reminder schedule configuration
+        from handlers.reminders import handle_schedule_input
+        if await handle_schedule_input(update, context):
+            return
 
         # Default: acknowledge the message
         logger.info(f"Unhandled voice from user {update.effective_user.id}")
@@ -116,7 +129,7 @@ def main() -> None:
             return
 
         from handlers.practice import handle_practice_callback
-        from handlers.reminders import handle_reminder_response
+        from handlers.reminders import handle_reminder_response, handle_schedule_verification
 
         query = update.callback_query
         callback_data = query.data
@@ -127,6 +140,9 @@ def main() -> None:
             await handle_practice_callback(update, context)
         elif callback_data.startswith('reminder_'):
             await handle_reminder_response(update, context)
+        elif callback_data.startswith('schedule_'):
+            # Schedule verification callbacks: schedule_confirm, schedule_cancel
+            await handle_schedule_verification(update, context)
         else:
             # TODO: Add more callback handlers
             logger.warning(f"Unhandled callback: {callback_data}")

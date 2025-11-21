@@ -255,7 +255,7 @@ async def test_schedule_management():
         "timezone": "Europe/Moscow"
     }
     db.set_reminder_schedule(test_user_id, test_schedule)
-    await scheduler.schedule_user_reminders(test_user_id, mock_bot)
+    await scheduler.schedule_user_reminders(test_user_id)
 
     # View schedule
     print("\n2. Viewing schedule with /view_schedule")

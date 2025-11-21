@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # Global scheduler instance
 scheduler: Optional[AsyncIOScheduler] = None
 
+# Global bot application reference (cannot be pickled, so stored separately)
+_bot_application = None
+
 
 def init_scheduler():
     """
@@ -55,7 +58,22 @@ def init_scheduler():
     logger.info(f"Job store location: {DATABASE_PATH.parent / 'scheduler.db'}")
 
 
-async def schedule_user_reminders(telegram_user_id: int, bot):
+def set_bot_application(application):
+    """
+    Set the bot application reference for sending reminders.
+
+    Must be called after init_scheduler() and before scheduling any reminders.
+    The bot application cannot be pickled, so we store it separately from job args.
+
+    Args:
+        application: The Telegram bot Application instance
+    """
+    global _bot_application
+    _bot_application = application
+    logger.info("Bot application reference set for scheduler")
+
+
+async def schedule_user_reminders(telegram_user_id: int):
     """
     Schedule reminders for a user based on their saved schedule.
 
@@ -64,7 +82,6 @@ async def schedule_user_reminders(telegram_user_id: int, bot):
 
     Args:
         telegram_user_id: Telegram user ID
-        bot: Bot instance for sending messages
 
     Example schedule from database:
         {
@@ -130,10 +147,11 @@ async def schedule_user_reminders(telegram_user_id: int, bot):
             job_id = f"reminder_{telegram_user_id}_{time_str}"
 
             # Add job to scheduler
+            # NOTE: Only pass telegram_user_id (picklable), not bot (unpicklable)
             scheduler.add_job(
                 send_reminder,
                 trigger=trigger,
-                args=[telegram_user_id, bot],
+                args=[telegram_user_id],
                 id=job_id,
                 replace_existing=True
             )
@@ -170,7 +188,7 @@ def remove_user_reminders(telegram_user_id: int):
     logger.info(f"Removed {removed_count} reminders for user {telegram_user_id}")
 
 
-async def send_reminder(telegram_user_id: int, bot):
+async def send_reminder(telegram_user_id: int):
     """
     Send reminder message to user with inline keyboard buttons.
 
@@ -181,9 +199,12 @@ async def send_reminder(telegram_user_id: int, bot):
 
     Args:
         telegram_user_id: Telegram user ID
-        bot: Bot instance for sending messages
     """
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    if not _bot_application:
+        logger.error("Bot application not set - cannot send reminder")
+        return
 
     try:
         # Create inline keyboard with two buttons
@@ -193,8 +214,8 @@ async def send_reminder(telegram_user_id: int, bot):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Send reminder message
-        await bot.send_message(
+        # Send reminder message using the bot from the application
+        await _bot_application.bot.send_message(
             chat_id=telegram_user_id,
             text=BotPhrases.REMINDER_PROMPT,  # "Готов записать наблюдение?"
             reply_markup=reply_markup

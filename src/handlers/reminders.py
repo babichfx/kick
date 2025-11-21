@@ -51,7 +51,7 @@ async def setup_schedule_command(update: Update, context: ContextTypes.DEFAULT_T
 
 async def handle_schedule_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
-    Handle natural language schedule input from user.
+    Handle natural language schedule input from user (text or voice).
 
     Called from main message handler when awaiting_schedule flag is set.
     Parses the schedule, saves it, and registers jobs with scheduler.
@@ -65,7 +65,44 @@ async def handle_schedule_input(update: Update, context: ContextTypes.DEFAULT_TY
     if not context.user_data.get('awaiting_schedule', False):
         return False
 
-    # Get user's natural language schedule request
+    # Handle voice messages
+    if update.message.voice:
+        from services.transcription import transcribe_voice
+
+        logger.info(f"User {user_id} sent voice message for schedule")
+
+        # Get file URL
+        voice_file = await context.bot.get_file(update.message.voice.file_id)
+        file_url = voice_file.file_path
+
+        # Transcribe
+        schedule_text = await transcribe_voice(file_url, language="ru")
+
+        if not schedule_text:
+            await update.message.reply_text(
+                "Не удалось распознать голосовое сообщение. Попробуйте еще раз."
+            )
+            return True
+
+        # Show transcription with verification buttons
+        keyboard = [
+            [InlineKeyboardButton("Подтвердить", callback_data='schedule_confirm')],
+            [InlineKeyboardButton("Отменить", callback_data='schedule_cancel')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Store transcription for later use
+        context.user_data['transcribed_schedule'] = schedule_text
+
+        await update.message.reply_text(
+            f"Распознано: {schedule_text}",
+            reply_markup=reply_markup
+        )
+
+        logger.info(f"Transcribed schedule for user {user_id}: {schedule_text}")
+        return True
+
+    # Handle text messages
     schedule_text = update.message.text.strip()
 
     logger.info(f"User {user_id} sent schedule request: {schedule_text}")
@@ -81,11 +118,17 @@ async def handle_schedule_input(update: Update, context: ContextTypes.DEFAULT_TY
             logger.warning(f"Failed to parse schedule for user {user_id}: {schedule_text}")
             return True
 
-        # Save schedule to database
+        # Save schedule to database (synchronous, commits immediately)
         db.set_reminder_schedule(user_id, schedule)
 
+        # IMPORTANT: Small delay to ensure database commit completes
+        # before scheduler reads the schedule. This prevents race condition
+        # where scheduler tries to read before write transaction commits.
+        import asyncio
+        await asyncio.sleep(0.1)
+
         # Schedule reminders with scheduler service
-        await scheduler.schedule_user_reminders(user_id, context.bot)
+        await scheduler.schedule_user_reminders(user_id)
 
         # Clear awaiting flag
         context.user_data['awaiting_schedule'] = False
@@ -111,6 +154,95 @@ async def handle_schedule_input(update: Update, context: ContextTypes.DEFAULT_TY
         )
         context.user_data['awaiting_schedule'] = False
         return True
+
+
+async def handle_schedule_verification(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle callback queries from schedule transcription verification buttons.
+
+    Handles two callback types:
+    - schedule_confirm: Proceed with parsing transcribed schedule
+    - schedule_cancel: Cancel and return to schedule input prompt
+    """
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    callback_data = query.data
+
+    logger.info(f"User {user_id} responded to schedule verification: {callback_data}")
+
+    try:
+        if callback_data == 'schedule_confirm':
+            # Get transcribed schedule from user_data
+            schedule_text = context.user_data.get('transcribed_schedule')
+
+            if not schedule_text:
+                await query.message.edit_text("Ошибка: текст расписания не найден.")
+                context.user_data['awaiting_schedule'] = False
+                return
+
+            # Delete verification message
+            await query.message.delete()
+
+            # Parse schedule using GPT
+            schedule = await parse_schedule(schedule_text)
+
+            if not schedule:
+                await query.message.reply_text(
+                    "Не удалось распознать расписание. Попробуйте еще раз."
+                )
+                logger.warning(f"Failed to parse schedule for user {user_id}: {schedule_text}")
+                context.user_data['transcribed_schedule'] = None
+                return
+
+            # Save schedule to database
+            db.set_reminder_schedule(user_id, schedule)
+
+            # IMPORTANT: Small delay to ensure database commit completes
+            import asyncio
+            await asyncio.sleep(0.1)
+
+            # Schedule reminders with scheduler service
+            await scheduler.schedule_user_reminders(user_id)
+
+            # Clear state
+            context.user_data['awaiting_schedule'] = False
+            context.user_data['transcribed_schedule'] = None
+
+            # Confirm to user
+            times_str = ", ".join(schedule['times'])
+            day_filter_str = {
+                'weekdays': 'по будням',
+                'weekends': 'по выходным',
+                'all': 'каждый день'
+            }.get(schedule.get('day_filter', 'all'), 'каждый день')
+
+            confirmation = f"{BotPhrases.REMINDER_CONFIGURED}\nВремя: {times_str}\nДни: {day_filter_str}"
+            await context.bot.send_message(chat_id=user_id, text=confirmation)
+
+            logger.info(f"Successfully configured schedule for user {user_id}: {schedule}")
+
+        elif callback_data == 'schedule_cancel':
+            # User cancelled - delete verification message and prompt again
+            await query.message.delete()
+            context.user_data['transcribed_schedule'] = None
+
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=BotPhrases.REMINDER_REQUEST
+            )
+
+            logger.info(f"User {user_id} cancelled schedule transcription")
+
+    except Exception as e:
+        logger.error(f"Error handling schedule verification for user {user_id}: {e}", exc_info=True)
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="Произошла ошибка при настройке расписания. Попробуйте еще раз."
+        )
+        context.user_data['awaiting_schedule'] = False
+        context.user_data['transcribed_schedule'] = None
 
 
 async def view_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

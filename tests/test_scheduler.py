@@ -94,8 +94,7 @@ async def test_scheduler():
 
     # 3. Schedule reminders for the user
     print("3. Scheduling reminders...")
-    mock_bot = MockBot()
-    await scheduler.schedule_user_reminders(test_user_id, mock_bot)
+    await scheduler.schedule_user_reminders(test_user_id)
     print("   ✓ Reminders scheduled\n")
 
     # 4. Get and display scheduled jobs
@@ -141,7 +140,7 @@ async def test_scheduler():
     for test_case in test_schedules:
         print(f"   Testing: {test_case['name']}")
         db.set_reminder_schedule(test_user_id, test_case['schedule'])
-        await scheduler.schedule_user_reminders(test_user_id, mock_bot)
+        await scheduler.schedule_user_reminders(test_user_id)
 
         jobs = scheduler.get_user_jobs(test_user_id)
         print(f"   ✓ Scheduled {len(jobs)} jobs")
@@ -177,8 +176,8 @@ async def test_scheduler():
     db.set_reminder_schedule(test_user_id, schedule_user_1)
     db.set_reminder_schedule(test_user_2, schedule_user_2)
 
-    await scheduler.schedule_user_reminders(test_user_id, mock_bot)
-    await scheduler.schedule_user_reminders(test_user_2, mock_bot)
+    await scheduler.schedule_user_reminders(test_user_id)
+    await scheduler.schedule_user_reminders(test_user_2)
 
     jobs_user_1 = scheduler.get_user_jobs(test_user_id)
     jobs_user_2 = scheduler.get_user_jobs(test_user_2)

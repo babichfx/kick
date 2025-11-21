@@ -95,7 +95,7 @@ async def send_field_confirmation(update: Update, context: ContextTypes.DEFAULT_
 
 async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
-    Handle user input during guided practice.
+    Handle user text input during guided practice.
 
     This function is called from the main message handler when user is in guided_practice mode.
     It collects the user's answer with 0.5 second buffering for multi-part messages.
@@ -145,6 +145,87 @@ async def handle_practice_input(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     return True
+
+
+async def handle_practice_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """
+    Handle user voice input during guided practice.
+
+    Transcribes voice message and adds to message accumulator like text input.
+
+    Returns:
+        True if input was handled, False otherwise
+    """
+    # Check if user is in guided practice mode
+    if context.user_data.get('mode') != 'guided_practice':
+        return False
+
+    user_id = update.effective_user.id
+
+    current_field_idx = context.user_data.get('current_field', 0)
+
+    # Validate field index
+    if current_field_idx >= len(PRACTICE_FIELDS):
+        logger.error(f"Invalid field index {current_field_idx} for user {user_id}")
+        context.user_data['mode'] = None
+        return True
+
+    current_field = PRACTICE_FIELDS[current_field_idx]
+
+    try:
+        # Get voice file from Telegram
+        voice = update.message.voice
+        file = await context.bot.get_file(voice.file_id)
+        file_url = file.file_path
+
+        logger.info(f"User {user_id} sent voice message for field '{current_field['name']}', transcribing...")
+
+        # Send typing indicator
+        await update.message.chat.send_action("typing")
+
+        # Transcribe voice
+        from services.transcription import transcribe_voice
+        transcribed_text = await transcribe_voice(file_url, language="ru")
+
+        if not transcribed_text:
+            await update.message.reply_text("Не удалось распознать голосовое сообщение. Попробуйте еще раз.")
+            return True
+
+        logger.info(f"Transcribed voice for user {user_id}: {transcribed_text[:100]}")
+
+        # Show transcription to user
+        await update.message.reply_text(f"Распознано: {transcribed_text}")
+
+        # Initialize message parts list if first message for this field
+        if user_id not in field_message_parts:
+            field_message_parts[user_id] = []
+            # If there's already a current_answer (user is adding more text after confirmation),
+            # include it as the first part
+            if context.user_data.get('current_answer'):
+                field_message_parts[user_id].append(context.user_data['current_answer'])
+
+        # Add transcribed text to message parts
+        field_message_parts[user_id].append(transcribed_text)
+        logger.debug(f"Accumulated transcribed voice for user {user_id}, field '{current_field['name']}', total parts: {len(field_message_parts[user_id])}")
+
+        # Cancel existing timer if any
+        if user_id in field_timers:
+            field_timers[user_id].cancel()
+
+        # Start new timer (0.5 seconds delay)
+        loop = asyncio.get_event_loop()
+        field_timers[user_id] = loop.call_later(
+            0.5,
+            asyncio.create_task,
+            send_field_confirmation(update, context, user_id)
+        )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error handling voice message for user {user_id}: {e}", exc_info=True)
+        await update.message.reply_text("Ошибка при обработке голосового сообщения. Попробуйте еще раз.")
+        return True
 
 
 async def handle_practice_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

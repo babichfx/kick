@@ -158,13 +158,22 @@ def update_user_activity(telegram_user_id: int) -> None:
 
 def set_reminder_schedule(telegram_user_id: int, schedule: Dict[str, Any]) -> None:
     """Save user's reminder schedule (parsed by GPT)."""
+    # Ensure user exists before updating
+    ensure_user_exists(telegram_user_id)
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('''
             UPDATE users
             SET reminder_schedule = ?
             WHERE telegram_user_id = ?
-        ''', (json.dumps(schedule), telegram_user_id))
+        ''', (json.dumps(schedule) if schedule else None, telegram_user_id))
+
+        # Verify the update was successful
+        if cursor.rowcount == 0:
+            logger.error(f"Failed to save reminder schedule for user {telegram_user_id} - no rows updated")
+            raise ValueError(f"User {telegram_user_id} not found in database")
+
         logger.info(f"Saved reminder schedule for user {telegram_user_id}")
 
 
@@ -177,8 +186,17 @@ def get_reminder_schedule(telegram_user_id: int) -> Optional[Dict[str, Any]]:
             (telegram_user_id,)
         )
         row = cursor.fetchone()
-        if row and row['reminder_schedule']:
-            return json.loads(row['reminder_schedule'])
+
+        if not row:
+            logger.warning(f"User {telegram_user_id} not found when getting reminder schedule")
+            return None
+
+        if row['reminder_schedule']:
+            schedule = json.loads(row['reminder_schedule'])
+            logger.debug(f"Retrieved reminder schedule for user {telegram_user_id}: {schedule}")
+            return schedule
+
+        logger.debug(f"No reminder schedule set for user {telegram_user_id}")
         return None
 
 
